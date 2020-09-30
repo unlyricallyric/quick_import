@@ -3,10 +3,110 @@ import os
 import sys
 import typing
 from collections import defaultdict
+from sqlalchemy import create_engine
 from pprint import pformat, pprint
 import csv
+import uuid
 import datetime
 import shutil
+
+#import models
+from entities.loePlaysTable import LoePlaysTable
+from entities.loePlayOpsTable import LoePlayOpsTable
+from entities.tportPlaysTable import TportPlaysTable
+from entities.tportPlayOpsTable import TportPlayOpsTable
+from entities.nglRegionsTable import NglRegionsTable
+from entities.nglPlaysTable import NglPlaysTable
+from entities.procFeesTable import ProcFeesTable
+from entities.mapRegionsTable import MapRegionsTable
+from entities.mapPlaysTable import MapPlaysTable
+from entities.mapPlayOpsTable import MapPlayOpsTable
+from entities.mapStateCountiesTable import MapStateCountiesTable
+
+
+# AURORA_HOST = sys.argv[1]
+# AURORA_USER = sys.argv[2]
+# AURORA_PASS = sys.argv[3]
+#
+# # SQL Alchemy Setup
+# engine = create_engine('postgresql://{0}:{1}@{2}'.format(AURORA_USER, AURORA_PASS, AURORA_HOST))
+# connection = engine.connect()
+
+
+# --- Helper Functions --- #
+
+def validateFields(csvFields, table):
+    if len(csvFields) != len(table.__table__.columns):
+        print('Field Count mismatch in ' + table.__table__.name)
+        return False
+
+    for field in csvFields:
+        fieldTableName = table.__table__.name + '.' + field
+        if str(fieldTableName) not in str(table.__table__.columns):
+            print('Field ' + fieldTableName + ' not in ' + table.__table__.name)
+            return False
+
+    return True
+
+
+def hasData(csvData):
+    for row in csvData:
+        if row:
+            return True
+
+    return False
+
+
+def resetSchema():
+    with open('./setup/createEconSchema.sql', 'r') as f:
+        sql = f.read()
+        response = connection.execute(sql)
+
+
+def ingestData(fileName, table):
+    print('Ingesting {}...'.format(fileName))
+    csvData, csvFields = parseCSV(fileName)
+    if validateFields(csvFields, table):
+        connection.execute(table.__table__.delete())
+        if hasData(csvData):
+            connection.execute(table.__table__.insert().values(csvData))
+
+
+def parseCSV(fileName):
+    csvData = csv.DictReader(open(fileName))
+    csvFields = ['aurora_id'] + csvData.fieldnames
+    resultArray = []
+    boolList = ['includeInReg', 'isStartIncl', 'isEndIncl']
+    for row in csvData:
+        noneFlag = False
+        for key, value in row.items():
+            if not value:
+                noneFlag = True
+        row.update({'aurora_id': str(uuid.uuid4())})
+        for column in boolList:
+            if column in csvFields:
+                if row[column].upper() == 'TRUE':
+                    row[column] = True
+                else:
+                    row[column] = False
+        if not noneFlag:
+            resultArray.append(row)
+
+    return resultArray, csvFields
+
+#mapping bassins to relative table
+sheetDict = {
+    "loebyplay" : LoePlaysTable,
+    "loebyplayop" : LoePlayOpsTable,
+    "mappingbyplay" : MapPlaysTable,
+    "mappingbyplayop" : MapPlayOpsTable,
+    "mappingbyregion" : MapRegionsTable,
+    "nglbyplay" : NglPlaysTable,
+    "nglbyregion" : NglRegionsTable,
+    "procfeebyplayop" : ProcFeesTable,
+    "tportbyplay" : TportPlaysTable,
+    "tportbyplayop" : TportPlayOpsTable
+}
 
 script_dir = os.path.dirname(os.path.abspath(__file__))  # /Users/boyuan.hao/PycharmProjects/RBPI Analyst Portal
 # script_dir = r'\\corp.rseg.com\Products\Data\US\State_Data\RBPI Analyst Portal'
@@ -22,7 +122,7 @@ assert os.path.isdir(asset_team_dir), asset_team_dir
 asset_xlsxs = ('Canada', 'Eastern Us', 'Gulf Coast', 'Mid-Continent', 'Midcon', 'Permian', 'Rockies')
 
 for asset_xlsx in asset_xlsxs:
-    print("Copy " + asset_xlsx + " to " + os.path.join(asset_team_dir, "{}.xlsx".format(asset_xlsx)))
+    print("Copy " + asset_xlsx + " to " + os.path.join(economic_inputs_dir, "{}.xlsx".format(asset_xlsx)))
     shutil.copy(os.path.join(asset_team_dir, "{}.xlsx".format(asset_xlsx)), economic_inputs_dir)
 
 # create a backup directory
@@ -99,6 +199,7 @@ def get_row_data(row: tuple, sheet_name: str, column_indices=None) -> typing.Opt
 
 if __name__ == '__main__':
 
+    #process and generates csv files
     sheet_data_all = defaultdict(list)
 
     for basin in basins:
@@ -136,4 +237,16 @@ if __name__ == '__main__':
             writer.writeheader()
             writer.writerows(sheet_data_all[sheet_name])
 
-    sys.exit(0)
+    #load csv files generated from previous step and sends to postgres db
+
+    print('Resetting schema...')
+    resetSchema()
+
+for sheet in sheets:
+    #print('Ingesting: '+ sheet+'.csv')
+    #print('File: '+back_up_dir+'/'+sheet+'.csv')
+    #print('Table: '+str(sheetDict[sheet]))
+    ingestData(back_up_dir+'/'+sheet+'.csv', sheetDict[sheet])
+print('Completed!')
+
+sys.exit(0)
