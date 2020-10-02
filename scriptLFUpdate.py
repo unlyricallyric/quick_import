@@ -9,11 +9,11 @@ import shutil
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-economic_inputs_dir = os.path.join(script_dir, "../Economic Inputs")
+economic_inputs_dir = os.path.join(script_dir, "Economic Inputs")
 assert os.path.isdir(economic_inputs_dir), economic_inputs_dir
-upload_csvs_dir = os.path.join(script_dir, "../Upload CSVs")
+upload_csvs_dir = os.path.join(script_dir, "Upload CSVs")
 assert os.path.isdir(upload_csvs_dir), upload_csvs_dir
-asset_team_dir = os.path.join(script_dir, '../Asset Team Economics')
+asset_team_dir = os.path.join(script_dir, 'Asset Team Economics')
 assert os.path.isdir(asset_team_dir), asset_team_dir
 
 # copy files from Asset Team Economics to Ecomomic Inputs
